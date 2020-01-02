@@ -1,0 +1,50 @@
+Exporter version: 5.5.0, Blender version: 2.79 (sub 0)
+========= Conversion from Blender to Babylon.js =========
+	Scene settings used:
+		selected layers only:  false
+		flat shading entire scene:  false
+		inline textures:  false
+		texture directory:  C:\xampp\htdocs\babylon-navigation-mesh\demo\mesh\
+	Python World class constructor completed
+	processing begun of mesh:  Navmesh
+		WARNING: No materials have been assigned: 
+		num positions      :  920
+		num normals        :  920
+		num uvs            :  0
+		num uvs2           :  0
+		num colors         :  0
+		num indices        :  4302
+	processing begun of mesh:  terrain
+		processing begun of Standard material:  terrain_mat
+			Diffuse texture found "Texture"
+				Image texture found, type:  diffuseTexture, mapped using: "uv"
+		processing begun of Standard material:  Crystals
+			Diffuse texture found "file1"
+				Image texture found, type:  diffuseTexture, mapped using: "uv"
+			Opacity texture found "file1"
+				Image texture found, type:  opacityTexture, mapped using: "uv"
+		processing begun of Standard material:  Rocks
+			Diffuse texture found "file2.001"
+				Image texture found, type:  diffuseTexture, mapped using: "uv"
+			Opacity texture found "file2.001"
+				Image texture found, type:  opacityTexture, mapped using: "uv"
+		processing begun of Standard material:  Leaves
+			Diffuse texture found "file3.005"
+				Image texture found, type:  diffuseTexture, mapped using: "uv"
+				WARNING: Opacity non-std way to indicate opacity, use material alpha to also use Opacity texture
+		processing begun of Standard material:  Tree_bark
+			Diffuse texture found "file2.005"
+				Image texture found, type:  diffuseTexture, mapped using: "uv"
+		processing begun of multimaterial:  level2.Multimaterial#0
+		num positions      :  48542
+		num normals        :  48542
+		num uvs            :  97084
+		num uvs2           :  0
+		num colors         :  0
+		num indices        :  105081
+	processing begun of camera (UniversalCamera):  Camera
+	processing begun of light (SUN):  Lamp
+========= Writing of scene file started =========
+========= Writing of scene file completed =========
+========= end of processing =========
+elapsed time:  0 min, 11.4097 secs

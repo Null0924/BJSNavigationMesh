@@ -1,0 +1,54 @@
+Exporter version: 5.6.4, Blender version: 2.79 (sub 7)
+========= Conversion from Blender to Babylon.js =========
+	Scene settings used :
+		export scope        :  ALL
+		inline textures     :  false
+		Positions Precision :  4
+		Normals Precision   :  3
+		UVs Precision       :  3
+		Vert Color Precision:  3
+		Mat Weight Precision:  2
+		texture directory   :  C:\xampp\htdocs\navmesh\demo\mesh\
+	Python World class constructor completed
+	processing begun of mesh:  Navmesh
+		WARNING: No materials have been assigned: 
+		num positions      :  765
+		num normals        :  765
+		num uvs            :  0
+		num uvs2           :  0
+		num colors         :  0
+		num indices        :  2901
+	processing begun of mesh:  mesh
+		processing begun of Standard material:  terrain
+		processing begun of Standard material:  Material.001
+			Diffuse texture found "crate.001"
+				Image texture found, type:  diffuseTexture, mapped using: "UVMap"
+	WARNING: Error encountered processing image file:  , Error:  [Errno 2] No such file or directory: 'C:\\xampp\\htdocs\\illyria_royale\\other\\models\\terrains\\..\\drive-download-20190727T171610Z-001\\crate.png'
+		processing begun of Standard material:  Tent
+			Diffuse texture found "file5"
+				Image texture found, type:  diffuseTexture, mapped using: "UVMap"
+	WARNING: Error encountered processing image file:  , Error:  [Errno 2] No such file or directory: 'C:\\xampp\\htdocs\\illyria_royale\\other\\models\\terrains\\..\\..\\textures\\tent_stump.jpg'
+		processing begun of Standard material:  stone_mat
+			Diffuse texture found "stone"
+				Image texture found, type:  diffuseTexture, mapped using: "UVMap"
+		processing begun of Standard material:  Leaves
+			Diffuse texture found "file3"
+				Image texture found, type:  diffuseTexture, mapped using: "UVMap"
+	WARNING: Error encountered processing image file:  , Error:  [Errno 2] No such file or directory: 'C:\\xampp\\htdocs\\illyria_royale\\other\\models\\terrains\\..\\..\\textures\\Tree_leaves.png'
+				WARNING: Opacity non-std way to indicate opacity, use material alpha to also use Opacity texture
+		processing begun of Standard material:  Tree_bark
+			Diffuse texture found "file2"
+				Image texture found, type:  diffuseTexture, mapped using: "UVMap"
+	WARNING: Error encountered processing image file:  , Error:  [Errno 2] No such file or directory: 'C:\\xampp\\htdocs\\illyria_royale\\other\\models\\terrains\\..\\..\\textures\\Tree_bark.jpg'
+		processing begun of multimaterial:  navmesh.Multimaterial#0
+		num positions      :  24975
+		num normals        :  24975
+		num uvs            :  49950
+		num uvs2           :  49950
+		num colors         :  0
+		num indices        :  88035
+	processing begun of camera (UniversalCamera):  Camera
+========= Writing of scene file started =========
+========= Writing of scene file completed =========
+========= end of processing =========
+elapsed time:  0 min, 5.3329 secs

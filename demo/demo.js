@@ -25,14 +25,13 @@ var loadScene = function() {
         navigation.setZoneData('level', zoneNodes);
     };
 
-    BABYLON.SceneLoader.Append("./demo/mesh/", "level.babylon", scene, onLoaded.bind(this));
+    BABYLON.SceneLoader.Append("./demo/mesh/", "navmesh.babylon", scene, onLoaded.bind(this));
 };
 
 // Set the basics
 var scene = new BABYLON.Scene(engine);
-var camera = new BABYLON.ArcRotateCamera("ArcRotateCamera", 1, 0.8, 10, new BABYLON.Vector3(0, 0, 0), scene);
-camera.setTarget(BABYLON.Vector3.Zero());
-camera.attachControl(canvas, false);
+var camera = new BABYLON.UniversalCamera("UniversalCamera", new BABYLON.Vector3(0, 0, -10), scene);
+camera.attachControl(canvas, true);
 var light = new BABYLON.HemisphericLight('light1', new BABYLON.Vector3(0,1,0), scene);
 light.intensity = 0.5;
 

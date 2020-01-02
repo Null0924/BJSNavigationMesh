@@ -1,4 +1,4 @@
-(function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.Navigation = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+(function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.Navigation = f()}})(function(){var define,module,exports;return (function(){function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s}return e})()({1:[function(require,module,exports){
 "use strict";
 
 var Class = require("abitbol");
@@ -111,6 +111,14 @@ var Astar = Class.$extend({
 	},
 	heuristic: function heuristic(pos1, pos2) {
 		return BABYLON.Vector3.DistanceSquared(pos1, pos2);
+	},
+	manhattanDistance: function manhattanDistance(pos1, pos2) {
+		return Math.abs(pos2.x - pos1.x) + Math.abs(pos2.z - pos1.z);
+	},
+	euclideanDistance: function euclideanDistance(pos1, pos2) {
+		var dx = abs(pos1.x - pos2.x);
+		dy = abs(pos1.z - pos2.z);
+		return Math.sqrt(dx * dx + dy * dy);
 	},
 	neighbours: function neighbours(graph, node) {
 		var ret = [];
@@ -384,6 +392,9 @@ var Navigation = Class.$extend({
   __init__: function __init__() {
     this.zoneNodes = {};
     this.astar = new Astar();
+    this.yTolerance = 1;
+    this.neighboursLookupTable = {};
+    this.polygonPositionInTable = {};
   },
 
   buildNodes: function buildNodes(mesh) {
@@ -396,6 +407,10 @@ var Navigation = Class.$extend({
 
   setZoneData: function setZoneData(zone, data) {
     this.zoneNodes[zone] = data;
+  },
+
+  setHeightTolerance: function setHeightTolerance(tolerance) {
+    this.yTolerance = tolerance;
   },
 
   getGroup: function getGroup(zone, position) {
@@ -443,6 +458,17 @@ var Navigation = Class.$extend({
     });
 
     return _.sample(candidates) || new BABYLON.Vector3();
+  },
+
+  isPositionInNavmesh: function isPositionInNavmesh(position, zone, group) {
+    var allNodes = this.zoneNodes[zone].groups[group];
+
+    for (var i = 0; i < allNodes.length; i++) {
+      if (this._isVectorInPolygon(position, allNodes[i])) {
+        return true;
+      }
+    }
+    return false;
   },
 
   projectOnNavmesh: function projectOnNavmesh(position, zone, group) {
@@ -532,50 +558,55 @@ var Navigation = Class.$extend({
     return proj;
   },
 
+  getClosestNode: function getClosestNode(position, zoneID, groupID) {
+    var _this = this;
+
+    var checkPolygon = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : false;
+
+    var nodes = this.zoneNodes[zoneID].groups[groupID];
+    var vertices = this.zoneNodes[zoneID].vertices;
+    var closestNode = null;
+    var closestDistance = Infinity;
+
+    nodes.forEach(function (node) {
+      var distance = BABYLON.Vector3.DistanceSquared(node.centroid, position);
+      if (distance < closestDistance && (!checkPolygon || _this._isVectorInPolygon(position, node, vertices))) {
+        closestNode = node;
+        closestDistance = distance;
+      }
+    });
+
+    return closestNode;
+  },
+
+
   findPath: function findPath(startPosition, targetPosition, zone, group) {
 
     var allNodes = this.zoneNodes[zone].groups[group];
     var vertices = this.zoneNodes[zone].vertices;
 
-    var closestNode = null;
-    var distance = Infinity;
-
-    allNodes.forEach(function (node) {
-      var measuredDistance = BABYLON.Vector3.DistanceSquared(node.centroid, startPosition);
-      if (measuredDistance < distance) {
-        closestNode = node;
-        distance = measuredDistance;
-      }
-    });
-
-    var farthestNode = null;
-    distance = Infinity;
-
-    allNodes.forEach(function (node) {
-      var measuredDistance = BABYLON.Vector3.DistanceSquared(node.centroid, targetPosition);
-      if (measuredDistance < distance && this._isVectorInPolygon(targetPosition, node, vertices)) {
-        farthestNode = node;
-        distance = measuredDistance;
-      }
-    }.bind(this));
-
-    // If we can't find any node, just go straight to the target
+    var closestNode = this.getClosestNode(startPosition, zone, group, true);
+    var farthestNode = this.getClosestNode(targetPosition, zone, group, true);
+    // If we can't find any node, theres no path to target
     if (!closestNode || !farthestNode) {
       return null;
     }
 
-    var paths = this.astar.search(allNodes, closestNode, farthestNode);
+    if (closestNode.id != farthestNode.id) {
+      // if the starting node and target node are at the same polygon skip searching and funneling as there is no obstacle.
+      var paths = this.astar.search(allNodes, closestNode, farthestNode);
+    } else {
+      var vectors = [];
+      vectors.push(new BABYLON.Vector3(targetPosition.x, targetPosition.y, targetPosition.z));
+      return vectors;
+    }
 
-    var getPortalFromTo = function getPortalFromTo(a, b) {
-      for (var i = 0; i < a.neighbours.length; i++) {
-        if (a.neighbours[i] === b.id) {
-          return a.portals[i];
-        }
-      }
-    };
-
+    return this._simpleFunnelPullRope(startPosition, targetPosition, paths, vertices);
     // We got the corridor
     // Now pull the rope
+  },
+
+  _simpleFunnelPullRope: function _simpleFunnelPullRope(startPosition, targetPosition, paths, vertices) {
 
     var channel = new Channel();
 
@@ -587,7 +618,7 @@ var Navigation = Class.$extend({
       var nextPolygon = paths[i + 1];
 
       if (nextPolygon) {
-        var portals = getPortalFromTo(polygon, nextPolygon);
+        var portals = polygon.portals[nextPolygon.id];
         channel.push(this.getVectorFrom(vertices, portals[0]), this.getVectorFrom(vertices, portals[1]));
       }
     }
@@ -601,17 +632,9 @@ var Navigation = Class.$extend({
     channel.path.forEach(function (c) {
       var vec = new BABYLON.Vector3(c.x, c.y, c.z);
 
-      // console.log(vec.clone().sub(startPosition).length());
-
-      // Ensure the intermediate steps aren't too close to the start position
-      // var dist = vec.clone().sub(startPosition).lengthSq();
-      // if (dist > 0.01 * 0.01) {
       vectors.push(vec);
-      // }
-
     });
 
-    // We don't need the first one, as we already know our start position
     vectors.shift();
 
     return vectors;
@@ -623,25 +646,14 @@ var Navigation = Class.$extend({
     }return c;
   },
 
-  _isVectorInPolygon: function _isVectorInPolygon(vector, polygon, vertices) {
-
-    // reference point will be the centroid of the polygon
-    // We need to rotate the vector as well as all the points which the polygon uses
-    var lowestPoint = 100000;
-    var highestPoint = -100000;
-
-    var polygonVertices = [];
-
-    _.each(polygon.vertexIds, function (vId) {
-      var point = this.getVectorFrom(vertices, vId);
-      lowestPoint = Math.min(point.y, lowestPoint);
-      highestPoint = Math.max(point.y, highestPoint);
-      polygonVertices.push(point);
-    }.bind(this));
-
-    if (vector.y < highestPoint + 0.5 && vector.y > lowestPoint - 0.5 && this._isPointInPoly(polygonVertices, vector)) {
-      return true;
-    }
+  _isVectorInPolygon: function _isVectorInPolygon(vector, polygon) {
+    //
+    if (vector.y < polygon.boundingBox.maxY + this.yTolerance && vector.y > polygon.boundingBox.minY - this.yTolerance && this._isPointInPoly(polygon.points, vector)
+    // vector.x < polygon.boundingBox.maxX && vector.x > polygon.boundingBox.minX && 
+    // vector.z < polygon.boundingBox.maxZ && vector.z > polygon.boundingBox.minZ 
+    ) {
+        return true;
+      }
     return false;
   },
 
@@ -759,70 +771,6 @@ var Navigation = Class.$extend({
     return new BABYLON.Vector3(vertices[id * 3], vertices[id * 3 + 1], vertices[id * 3 + 2]);
   },
 
-  _cleanPolygon: function _cleanPolygon(polygon, navigationMesh) {
-
-    var newVertexIds = [];
-
-    var vertices = navigationMesh.vertices;
-
-    for (var i = 0; i < polygon.vertexIds.length; i++) {
-
-      var vertex = this.getVectorFrom(vertices, polygon.vertexIds[i]);
-
-      var nextVertexId, previousVertexId;
-      var nextVertex, previousVertex;
-
-      // console.log("nextVertex: ", nextVertex);
-
-      if (i === 0) {
-        nextVertexId = polygon.vertexIds[1];
-        previousVertexId = polygon.vertexIds[polygon.vertexIds.length - 1];
-      } else if (i === polygon.vertexIds.length - 1) {
-        nextVertexId = polygon.vertexIds[0];
-        previousVertexId = polygon.vertexIds[polygon.vertexIds.length - 2];
-      } else {
-        nextVertexId = polygon.vertexIds[i + 1];
-        previousVertexId = polygon.vertexIds[i - 1];
-      }
-
-      nextVertex = this.getVectorFrom(vertices, nextVertexId);
-      previousVertex = this.getVectorFrom(vertices, previousVertexId);
-
-      var a = nextVertex.clone().sub(vertex);
-      var b = previousVertex.clone().sub(vertex);
-
-      var angle = a.angleTo(b);
-
-      // console.log(angle);
-
-      if (angle > Math.PI - 0.01 && angle < Math.PI + 0.01) {
-        // Unneccesary vertex
-        // console.log("Unneccesary vertex: ", polygon.vertexIds[i]);
-        // console.log("Angle between "+previousVertexId+", "+polygon.vertexIds[i]+" "+nextVertexId+" was: ", angle);
-
-
-        // Remove the neighbours who had this vertex
-        var goodNeighbours = [];
-        polygon.neighbours.forEach(function (neighbour) {
-          if (!_.includes(neighbour.vertexIds, polygon.vertexIds[i])) {
-            goodNeighbours.push(neighbour);
-          }
-        });
-        polygon.neighbours = goodNeighbours;
-
-        // TODO cleanup the list of vertices and rebuild vertexIds for all polygons
-      } else {
-        newVertexIds.push(polygon.vertexIds[i]);
-      }
-    }
-
-    // console.log("New vertexIds: ", newVertexIds);
-
-    polygon.vertexIds = newVertexIds;
-
-    this._setPolygonCentroid(polygon, navigationMesh);
-  },
-
   _isConvex: function _isConvex(polygon, navigationMesh) {
 
     var vertices = navigationMesh.vertices;
@@ -900,19 +848,27 @@ var Navigation = Class.$extend({
     var polygonGroups = [];
     var groupCount = 0;
 
+    var count = 0;
+    var elementsToVisit = [];
+
     var spreadGroupId = function spreadGroupId(polygon) {
-      _.each(polygon.neighbours, function (neighbour) {
-        if (_.isUndefined(neighbour.group)) {
-          neighbour.group = polygon.group;
-          spreadGroupId(neighbour);
+      for (var i = 0; i < elementsToVisit.length; i++) {
+        if (_.isUndefined(elementsToVisit[i].group)) {
+          elementsToVisit[i].group = polygon.group;
+          // count += 1;
+          // console.log(count);
+          elementsToVisit = elementsToVisit.concat(elementsToVisit[i].neighbours);
+          //spreadGroupId(neighbour);
         }
-      });
+      }
     };
 
     _.each(polygons, function (polygon) {
 
       if (_.isUndefined(polygon.group)) {
         polygon.group = groupCount++;
+        console.log(count);
+        elementsToVisit = elementsToVisit.concat(polygon.neighbours);
         // Spread it
         spreadGroupId(polygon);
       }
@@ -927,63 +883,70 @@ var Navigation = Class.$extend({
     return polygonGroups;
   },
 
-  _array_intersect: function _array_intersect() {
-    var i,
-        shortest,
-        nShortest,
-        n,
-        len,
-        ret = [],
-        obj = {},
-        nOthers;
-    nOthers = arguments.length - 1;
-    nShortest = arguments[0].length;
-    shortest = 0;
-    for (i = 0; i <= nOthers; i++) {
-      n = arguments[i].length;
-      if (n < nShortest) {
-        shortest = i;
-        nShortest = n;
+  _buildNeighboursLookupTable: function _buildNeighboursLookupTable(polygon) {
+
+    var minIndex = Math.min(polygon.vertexIds[0], polygon.vertexIds[1], polygon.vertexIds[2]);
+    var maxIndex = Math.max(polygon.vertexIds[0], polygon.vertexIds[1], polygon.vertexIds[2]);
+    var midIndex = polygon.vertexIds[0] + polygon.vertexIds[1] + polygon.vertexIds[2] - minIndex - maxIndex;
+
+    if (!this.neighboursLookupTable[minIndex]) {
+      this.neighboursLookupTable[minIndex] = {};
+      this.neighboursLookupTable[minIndex][midIndex] = [];
+      this.neighboursLookupTable[minIndex][maxIndex] = [];
+
+      this.polygonPositionInTable[minIndex] = {};
+      this.polygonPositionInTable[minIndex][midIndex] = {};
+      this.polygonPositionInTable[minIndex][maxIndex] = {};
+    } else {
+      if (!this.neighboursLookupTable[minIndex][midIndex]) {
+        this.neighboursLookupTable[minIndex][midIndex] = [];
+        this.polygonPositionInTable[minIndex][midIndex] = {};
+      }
+      if (!this.neighboursLookupTable[minIndex][maxIndex]) {
+        this.neighboursLookupTable[minIndex][maxIndex] = [];
+        this.polygonPositionInTable[minIndex][maxIndex] = {};
       }
     }
 
-    for (i = 0; i <= nOthers; i++) {
-      n = i === shortest ? 0 : i || shortest; //Read the shortest array first. Read the first array instead of the shortest
-      len = arguments[n].length;
-      for (var j = 0; j < len; j++) {
-        var elem = arguments[n][j];
-        if (obj[elem] === i - 1) {
-          if (i === nOthers) {
-            ret.push(elem);
-            obj[elem] = 0;
-          } else {
-            obj[elem] = i;
-          }
-        } else if (i === 0) {
-          obj[elem] = 0;
-        }
+    if (!this.neighboursLookupTable[midIndex]) {
+      this.neighboursLookupTable[midIndex] = {};
+      this.neighboursLookupTable[midIndex][maxIndex] = [];
+
+      this.polygonPositionInTable[midIndex] = {};
+      this.polygonPositionInTable[midIndex][maxIndex] = {};
+    } else {
+      if (!this.neighboursLookupTable[midIndex][maxIndex]) {
+        this.neighboursLookupTable[midIndex][maxIndex] = [];
+        this.polygonPositionInTable[midIndex][maxIndex] = {};
       }
     }
-    return ret;
+
+    this.neighboursLookupTable[minIndex][midIndex].push(polygon);
+    this.neighboursLookupTable[minIndex][maxIndex].push(polygon);
+    this.neighboursLookupTable[midIndex][maxIndex].push(polygon);
+
+    this.polygonPositionInTable[minIndex][midIndex][polygon.id] = this.neighboursLookupTable[minIndex][midIndex].length;
+    this.polygonPositionInTable[minIndex][maxIndex][polygon.id] = this.neighboursLookupTable[minIndex][maxIndex].length;
+    this.polygonPositionInTable[midIndex][maxIndex][polygon.id] = this.neighboursLookupTable[midIndex][maxIndex].length;
   },
 
-  _buildPolygonNeighbours: function _buildPolygonNeighbours(polygon, navigationMesh) {
+  _buildPolygonNeighbours: function _buildPolygonNeighbours(polygon) {
     polygon.neighbours = [];
+    var minIndex = Math.min(polygon.vertexIds[0], polygon.vertexIds[1], polygon.vertexIds[2]);
+    var maxIndex = Math.max(polygon.vertexIds[0], polygon.vertexIds[1], polygon.vertexIds[2]);
+    var midIndex = polygon.vertexIds[0] + polygon.vertexIds[1] + polygon.vertexIds[2] - minIndex - maxIndex;
 
-    // All other nodes that contain at least two of our vertices are our neighbours
-    for (var i = 0, len = navigationMesh.polygons.length; i < len; i++) {
-      if (polygon === navigationMesh.polygons[i]) continue;
+    var firstEdgeNeighbours = this.neighboursLookupTable[minIndex][midIndex].slice();
+    firstEdgeNeighbours.splice(this.polygonPositionInTable[minIndex][midIndex][polygon.id] - 1, 1);
 
-      // Don't check polygons that are too far, since the intersection tests take a long time
-      if (BABYLON.Vector3.DistanceSquared(polygon.centroid, navigationMesh.polygons[i].centroid) > 100 * 100) continue;
+    var secondEdgeNeighbours = this.neighboursLookupTable[minIndex][maxIndex].slice();
+    secondEdgeNeighbours.splice(this.polygonPositionInTable[minIndex][maxIndex][polygon.id] - 1, 1);
 
-      var matches = this._array_intersect(polygon.vertexIds, navigationMesh.polygons[i].vertexIds);
-      // var matches = _.intersection(polygon.vertexIds, navigationMesh.polygons[i].vertexIds);
+    var thirdEdgeNeighbours = this.neighboursLookupTable[midIndex][maxIndex].slice();
+    thirdEdgeNeighbours.splice(this.polygonPositionInTable[midIndex][maxIndex][polygon.id] - 1, 1);
 
-      if (matches.length >= 2) {
-        polygon.neighbours.push(navigationMesh.polygons[i]);
-      }
-    }
+    polygon.neighbours = firstEdgeNeighbours.concat(secondEdgeNeighbours);
+    polygon.neighbours = polygon.neighbours.concat(thirdEdgeNeighbours);
   },
 
   _buildPolygonsFromGeometry: function _buildPolygonsFromGeometry(geometry) {
@@ -996,6 +959,9 @@ var Navigation = Class.$extend({
     console.log("Vertices:", vertices.length / 3, "polygons:", indices.length / 3);
 
     // Convert the faces into a custom format that supports more than 3 vertices
+    this.neighboursLookupTable = {};
+    this.polygonPositionInTable = {};
+
     for (var i = 0; i < indices.length; i += 3) {
 
       var a = this.getVectorFrom(vertices, indices[i]);
@@ -1008,8 +974,23 @@ var Navigation = Class.$extend({
         vertexIds: [indices[i], indices[i + 1], indices[i + 2]],
         centroid: geometry.centroids[i / 3],
         normal: normal,
-        neighbours: []
+        neighbours: [],
+        boundingBox: { maxY: -100000, minY: 100000, maxX: -100000, minX: 100000, maxZ: -100000, minZ: 100000 },
+        points: []
       });
+
+      this._buildNeighboursLookupTable(polygons[polygons.length - 1]);
+
+      for (var j = 0; j < polygons[polygons.length - 1].vertexIds.length; j++) {
+        var point = this.getVectorFrom(vertices, polygons[polygons.length - 1].vertexIds[j]);
+        polygons[polygons.length - 1].points.push(point);
+        polygons[polygons.length - 1].boundingBox.minY = Math.min(point.y, polygons[polygons.length - 1].boundingBox.minY);
+        polygons[polygons.length - 1].boundingBox.maxY = Math.max(point.y, polygons[polygons.length - 1].boundingBox.maxY);
+        polygons[polygons.length - 1].boundingBox.minX = Math.min(point.x, polygons[polygons.length - 1].boundingBox.minX);
+        polygons[polygons.length - 1].boundingBox.maxX = Math.max(point.x, polygons[polygons.length - 1].boundingBox.maxX);
+        polygons[polygons.length - 1].boundingBox.minZ = Math.min(point.z, polygons[polygons.length - 1].boundingBox.minZ);
+        polygons[polygons.length - 1].boundingBox.maxZ = Math.max(point.z, polygons[polygons.length - 1].boundingBox.maxZ);
+      }
     }
 
     var navigationMesh = {
@@ -1017,129 +998,14 @@ var Navigation = Class.$extend({
       vertices: vertices
     };
 
+    //build the lookup table for neighbours
+    // this._buildNeighboursLookupTable(polygons);
     // Build a list of adjacent polygons
     _.each(polygons, function (polygon) {
-      this._buildPolygonNeighbours(polygon, navigationMesh);
+      this._buildPolygonNeighbours(polygon);
     }.bind(this));
 
     return navigationMesh;
-  },
-
-  _cleanNavigationMesh: function _cleanNavigationMesh(navigationMesh) {
-
-    var polygons = navigationMesh.polygons;
-    var vertices = navigationMesh.vertices;
-
-    // Remove steep triangles
-    var up = new BABYLON.Vector3(0, 1, 0);
-    polygons = _.filter(polygons, function (polygon) {
-      var angle = Math.acos(BABYLON.Vector3.Dot(up, polygon.normal));
-      return angle < Math.PI / 4;
-    });
-
-    // Remove unnecessary edges using the Hertel-Mehlhorn algorithm
-
-    // 1. Find a pair of adjacent nodes (i.e., two nodes that share an edge between them)
-    //    whose normals are nearly identical (i.e., their surfaces face the same direction).
-
-
-    var newPolygons = [];
-
-    _.each(polygons, function (polygon) {
-
-      if (polygon.toBeDeleted) return;
-
-      var keepLooking = true;
-
-      while (keepLooking) {
-        keepLooking = false;
-
-        _.each(polygon.neighbours, function (otherPolygon) {
-
-          if (polygon === otherPolygon) return;
-
-          if (Math.acos(BABYLON.Vector3.Dot(polygon.normal, otherPolygon.normal)) < 0.01) {
-            // That's pretty equal alright!
-
-            // Merge otherPolygon with polygon
-
-            var testPolygon = {
-              vertexIds: this._mergeVertexIds(polygon.vertexIds, otherPolygon.vertexIds),
-              neighbours: polygon.neighbours,
-              normal: polygon.normal.clone(),
-              centroid: polygon.centroid.clone()
-            };
-
-            this._cleanPolygon(testPolygon, navigationMesh);
-
-            if (this._isConvex(testPolygon, navigationMesh)) {
-              otherPolygon.toBeDeleted = true;
-
-              // Inherit the neighbours from the to be merged polygon, except ourself
-              _.each(otherPolygon.neighbours, function (otherPolygonNeighbour) {
-
-                // Set this poly to be merged to be no longer our neighbour
-                otherPolygonNeighbour.neighbours = _.without(otherPolygonNeighbour.neighbours, otherPolygon);
-
-                if (otherPolygonNeighbour !== polygon) {
-                  // Tell the old Polygon's neighbours about the new neighbour who has merged
-                  otherPolygonNeighbour.neighbours.push(polygon);
-                } else {
-                  // For ourself, we don't need to know about ourselves
-                  // But we inherit the old neighbours
-                  polygon.neighbours = polygon.neighbours.concat(otherPolygon.neighbours);
-                  polygon.neighbours = _.uniq(polygon.neighbours);
-
-                  // Without ourselves in it!
-                  polygon.neighbours = _.without(polygon.neighbours, polygon);
-                }
-              });
-
-              polygon.vertexIds = this._mergeVertexIds(polygon.vertexIds, otherPolygon.vertexIds);
-
-              this._cleanPolygon(polygon, navigationMesh);
-
-              keepLooking = true;
-            }
-          }
-        }.bind(this));
-      }
-
-      if (!polygon.toBeDeleted) {
-        newPolygons.push(polygon);
-      }
-    });
-
-    var isUsed = function isUsed(vId) {
-      var contains = false;
-      _.each(newPolygons, function (p) {
-        if (!contains && _.includes(p.vertexIds, vId)) {
-          contains = true;
-        }
-      });
-      return contains;
-    };
-
-    // Clean vertices
-    for (var i = 0; i < vertices.length; i++) {
-      if (!isUsed(i)) {
-
-        // Decrement all vertices that are higher than i
-        _.each(newPolygons, function (p) {
-          for (var j = 0; j < p.vertexIds.length; j++) {
-            if (p.vertexIds[j] > i) {
-              p.vertexIds[j]--;
-            }
-          }
-        });
-
-        vertices.splice(i, 1);
-        i--;
-      }
-    }
-
-    navigationMesh.polygons = newPolygons;
-    navigationMesh.vertices = vertices;
   },
 
   _buildNavigationMesh: function _buildNavigationMesh(geometry) {
@@ -1242,40 +1108,26 @@ var Navigation = Class.$extend({
   _getSharedVerticesInOrder: function _getSharedVerticesInOrder(a, b) {
 
     var aList = a.vertexIds;
+    var a0 = aList[0],
+        a1 = aList[1],
+        a2 = aList[2];
     var bList = b.vertexIds;
+    var shared0 = bList.includes(a0);
+    var shared1 = bList.includes(a1);
+    var shared2 = bList.includes(a2);
 
-    var sharedVertices = [];
-
-    _.each(aList, function (vId) {
-      if (_.includes(bList, vId)) {
-        sharedVertices.push(vId);
-      }
-    });
-
-    if (sharedVertices.length < 2) return [];
-
-    // console.log("TRYING aList:", aList, ", bList:", bList, ", sharedVertices:", sharedVertices);
-
-    if (_.includes(sharedVertices, aList[0]) && _.includes(sharedVertices, aList[aList.length - 1])) {
-      // Vertices on both edges are bad, so shift them once to the left
-      aList.push(aList.shift());
+    if (shared0 && shared1 && shared2) {
+      return Array.from(aList);
+    } else if (shared0 && shared1) {
+      return [a0, a1];
+    } else if (shared1 && shared2) {
+      return [a1, a2];
+    } else if (shared0 && shared2) {
+      return [a2, a0]; // this ordering will affect the string pull algorithm later, not clear if significant
+    } else {
+      console.warn("Error processing navigation mesh neighbors; neighbors with <2 shared vertices found.");
+      return [];
     }
-
-    if (_.includes(sharedVertices, bList[0]) && _.includes(sharedVertices, bList[bList.length - 1])) {
-      // Vertices on both edges are bad, so shift them once to the left
-      bList.push(bList.shift());
-    }
-
-    // Again!
-    sharedVertices = [];
-
-    _.each(aList, function (vId) {
-      if (_.includes(bList, vId)) {
-        sharedVertices.push(vId);
-      }
-    });
-
-    return sharedVertices;
   },
 
   _groupNavMesh: function _groupNavMesh(navigationMesh) {
@@ -1305,15 +1157,12 @@ var Navigation = Class.$extend({
       _.each(group, function (p) {
 
         var neighbours = [];
+        var portals = {};
 
         _.each(p.neighbours, function (n) {
-          neighbours.push(findPolygonIndex(group, n));
-        });
-
-        // Build a portal list to each neighbour
-        var portals = [];
-        _.each(p.neighbours, function (n) {
-          portals.push(this._getSharedVerticesInOrder(p, n));
+          var neighbourId = findPolygonIndex(group, n);
+          neighbours.push(neighbourId);
+          portals[neighbourId] = this._getSharedVerticesInOrder(p, n);
         }.bind(this));
 
         p.centroid.x = this._roundNumber(p.centroid.x, 2);
@@ -1325,7 +1174,9 @@ var Navigation = Class.$extend({
           neighbours: neighbours,
           vertexIds: p.vertexIds,
           centroid: p.centroid,
-          portals: portals
+          portals: portals,
+          boundingBox: p.boundingBox,
+          points: p.points
         });
       }.bind(this));
 
@@ -1785,7 +1636,7 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
   var undefined;
 
   /** Used as the semantic version number. */
-  var VERSION = '4.17.4';
+  var VERSION = '4.17.5';
 
   /** Used as the size to enable large array optimizations. */
   var LARGE_ARRAY_SIZE = 200;
@@ -1916,7 +1767,6 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
   /** Used to match property names within property paths. */
   var reIsDeepProp = /\.|\[(?:[^[\]]*|(["'])(?:(?!\1)[^\\]|\\.)*?\1)\]/,
       reIsPlainProp = /^\w*$/,
-      reLeadingDot = /^\./,
       rePropName = /[^.[\]]+|\[(?:(-?\d+(?:\.\d+)?)|(["'])((?:(?!\2)[^\\]|\\.)*?)\2)\]|(?=(?:\.|\[\])(?:\.|\[\]|$))/g;
 
   /**
@@ -2016,8 +1866,8 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
       reOptMod = rsModifier + '?',
       rsOptVar = '[' + rsVarRange + ']?',
       rsOptJoin = '(?:' + rsZWJ + '(?:' + [rsNonAstral, rsRegional, rsSurrPair].join('|') + ')' + rsOptVar + reOptMod + ')*',
-      rsOrdLower = '\\d*(?:(?:1st|2nd|3rd|(?![123])\\dth)\\b)',
-      rsOrdUpper = '\\d*(?:(?:1ST|2ND|3RD|(?![123])\\dTH)\\b)',
+      rsOrdLower = '\\d*(?:1st|2nd|3rd|(?![123])\\dth)(?=\\b|[A-Z_])',
+      rsOrdUpper = '\\d*(?:1ST|2ND|3RD|(?![123])\\dTH)(?=\\b|[a-z_])',
       rsSeq = rsOptVar + reOptMod + rsOptJoin,
       rsEmoji = '(?:' + [rsDingbat, rsRegional, rsSurrPair].join('|') + ')' + rsSeq,
       rsSymbol = '(?:' + [rsNonAstral + rsCombo + '?', rsCombo, rsRegional, rsSurrPair, rsAstral].join('|') + ')';
@@ -2223,34 +2073,6 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
       nodeIsTypedArray = nodeUtil && nodeUtil.isTypedArray;
 
   /*--------------------------------------------------------------------------*/
-
-  /**
-   * Adds the key-value `pair` to `map`.
-   *
-   * @private
-   * @param {Object} map The map to modify.
-   * @param {Array} pair The key-value pair to add.
-   * @returns {Object} Returns `map`.
-   */
-  function addMapEntry(map, pair) {
-    // Don't return `map.set` because it's not chainable in IE 11.
-    map.set(pair[0], pair[1]);
-    return map;
-  }
-
-  /**
-   * Adds `value` to `set`.
-   *
-   * @private
-   * @param {Object} set The set to modify.
-   * @param {*} value The value to add.
-   * @returns {Object} Returns `set`.
-   */
-  function addSetEntry(set, value) {
-    // Don't return `set.add` because it's not chainable in IE 11.
-    set.add(value);
-    return set;
-  }
 
   /**
    * A faster alternative to `Function#apply`, this function invokes `func`
@@ -3016,6 +2838,20 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
       }
     }
     return result;
+  }
+
+  /**
+   * Gets the value at `key`, unless `key` is "__proto__".
+   *
+   * @private
+   * @param {Object} object The object to query.
+   * @param {string} key The key of the property to get.
+   * @returns {*} Returns the property value.
+   */
+  function safeGet(object, key) {
+    return key == '__proto__'
+      ? undefined
+      : object[key];
   }
 
   /**
@@ -4450,7 +4286,7 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
           if (!cloneableTags[tag]) {
             return object ? value : {};
           }
-          result = initCloneByTag(value, tag, baseClone, isDeep);
+          result = initCloneByTag(value, tag, isDeep);
         }
       }
       // Check for circular references and return its corresponding clone.
@@ -4460,6 +4296,22 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
         return stacked;
       }
       stack.set(value, result);
+
+      if (isSet(value)) {
+        value.forEach(function(subValue) {
+          result.add(baseClone(subValue, bitmask, customizer, subValue, value, stack));
+        });
+
+        return result;
+      }
+
+      if (isMap(value)) {
+        value.forEach(function(subValue, key) {
+          result.set(key, baseClone(subValue, bitmask, customizer, key, value, stack));
+        });
+
+        return result;
+      }
 
       var keysFunc = isFull
         ? (isFlat ? getAllKeysIn : getAllKeys)
@@ -5388,7 +5240,7 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
         }
         else {
           var newValue = customizer
-            ? customizer(object[key], srcValue, (key + ''), object, source, stack)
+            ? customizer(safeGet(object, key), srcValue, (key + ''), object, source, stack)
             : undefined;
 
           if (newValue === undefined) {
@@ -5415,8 +5267,8 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
      *  counterparts.
      */
     function baseMergeDeep(object, source, key, srcIndex, mergeFunc, customizer, stack) {
-      var objValue = object[key],
-          srcValue = source[key],
+      var objValue = safeGet(object, key),
+          srcValue = safeGet(source, key),
           stacked = stack.get(srcValue);
 
       if (stacked) {
@@ -6325,20 +6177,6 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
     }
 
     /**
-     * Creates a clone of `map`.
-     *
-     * @private
-     * @param {Object} map The map to clone.
-     * @param {Function} cloneFunc The function to clone values.
-     * @param {boolean} [isDeep] Specify a deep clone.
-     * @returns {Object} Returns the cloned map.
-     */
-    function cloneMap(map, isDeep, cloneFunc) {
-      var array = isDeep ? cloneFunc(mapToArray(map), CLONE_DEEP_FLAG) : mapToArray(map);
-      return arrayReduce(array, addMapEntry, new map.constructor);
-    }
-
-    /**
      * Creates a clone of `regexp`.
      *
      * @private
@@ -6349,20 +6187,6 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
       var result = new regexp.constructor(regexp.source, reFlags.exec(regexp));
       result.lastIndex = regexp.lastIndex;
       return result;
-    }
-
-    /**
-     * Creates a clone of `set`.
-     *
-     * @private
-     * @param {Object} set The set to clone.
-     * @param {Function} cloneFunc The function to clone values.
-     * @param {boolean} [isDeep] Specify a deep clone.
-     * @returns {Object} Returns the cloned set.
-     */
-    function cloneSet(set, isDeep, cloneFunc) {
-      var array = isDeep ? cloneFunc(setToArray(set), CLONE_DEEP_FLAG) : setToArray(set);
-      return arrayReduce(array, addSetEntry, new set.constructor);
     }
 
     /**
@@ -7959,7 +7783,7 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
      */
     function initCloneArray(array) {
       var length = array.length,
-          result = array.constructor(length);
+          result = new array.constructor(length);
 
       // Add properties assigned by `RegExp#exec`.
       if (length && typeof array[0] == 'string' && hasOwnProperty.call(array, 'index')) {
@@ -7986,16 +7810,15 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
      * Initializes an object clone based on its `toStringTag`.
      *
      * **Note:** This function only supports cloning values with tags of
-     * `Boolean`, `Date`, `Error`, `Number`, `RegExp`, or `String`.
+     * `Boolean`, `Date`, `Error`, `Map`, `Number`, `RegExp`, `Set`, or `String`.
      *
      * @private
      * @param {Object} object The object to clone.
      * @param {string} tag The `toStringTag` of the object to clone.
-     * @param {Function} cloneFunc The function to clone values.
      * @param {boolean} [isDeep] Specify a deep clone.
      * @returns {Object} Returns the initialized clone.
      */
-    function initCloneByTag(object, tag, cloneFunc, isDeep) {
+    function initCloneByTag(object, tag, isDeep) {
       var Ctor = object.constructor;
       switch (tag) {
         case arrayBufferTag:
@@ -8014,7 +7837,7 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
           return cloneTypedArray(object, isDeep);
 
         case mapTag:
-          return cloneMap(object, isDeep, cloneFunc);
+          return new Ctor;
 
         case numberTag:
         case stringTag:
@@ -8024,7 +7847,7 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
           return cloneRegExp(object);
 
         case setTag:
-          return cloneSet(object, isDeep, cloneFunc);
+          return new Ctor;
 
         case symbolTag:
           return cloneSymbol(object);
@@ -8071,10 +7894,13 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
      * @returns {boolean} Returns `true` if `value` is a valid index, else `false`.
      */
     function isIndex(value, length) {
+      var type = typeof value;
       length = length == null ? MAX_SAFE_INTEGER : length;
+
       return !!length &&
-        (typeof value == 'number' || reIsUint.test(value)) &&
-        (value > -1 && value % 1 == 0 && value < length);
+        (type == 'number' ||
+          (type != 'symbol' && reIsUint.test(value))) &&
+            (value > -1 && value % 1 == 0 && value < length);
     }
 
     /**
@@ -8524,11 +8350,11 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
      */
     var stringToPath = memoizeCapped(function(string) {
       var result = [];
-      if (reLeadingDot.test(string)) {
+      if (string.charCodeAt(0) === 46 /* . */) {
         result.push('');
       }
-      string.replace(rePropName, function(match, number, quote, string) {
-        result.push(quote ? string.replace(reEscapeChar, '$1') : (number || match));
+      string.replace(rePropName, function(match, number, quote, subString) {
+        result.push(quote ? subString.replace(reEscapeChar, '$1') : (number || match));
       });
       return result;
     });
@@ -12136,9 +11962,11 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
       function remainingWait(time) {
         var timeSinceLastCall = time - lastCallTime,
             timeSinceLastInvoke = time - lastInvokeTime,
-            result = wait - timeSinceLastCall;
+            timeWaiting = wait - timeSinceLastCall;
 
-        return maxing ? nativeMin(result, maxWait - timeSinceLastInvoke) : result;
+        return maxing
+          ? nativeMin(timeWaiting, maxWait - timeSinceLastInvoke)
+          : timeWaiting;
       }
 
       function shouldInvoke(time) {
@@ -14570,9 +14398,35 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
      * _.defaults({ 'a': 1 }, { 'b': 2 }, { 'a': 3 });
      * // => { 'a': 1, 'b': 2 }
      */
-    var defaults = baseRest(function(args) {
-      args.push(undefined, customDefaultsAssignIn);
-      return apply(assignInWith, undefined, args);
+    var defaults = baseRest(function(object, sources) {
+      object = Object(object);
+
+      var index = -1;
+      var length = sources.length;
+      var guard = length > 2 ? sources[2] : undefined;
+
+      if (guard && isIterateeCall(sources[0], sources[1], guard)) {
+        length = 1;
+      }
+
+      while (++index < length) {
+        var source = sources[index];
+        var props = keysIn(source);
+        var propsIndex = -1;
+        var propsLength = props.length;
+
+        while (++propsIndex < propsLength) {
+          var key = props[propsIndex];
+          var value = object[key];
+
+          if (value === undefined ||
+              (eq(value, objectProto[key]) && !hasOwnProperty.call(object, key))) {
+            object[key] = source[key];
+          }
+        }
+      }
+
+      return object;
     });
 
     /**
@@ -14969,6 +14823,11 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
      * // => { '1': 'c', '2': 'b' }
      */
     var invert = createInverter(function(result, value, key) {
+      if (value != null &&
+          typeof value.toString != 'function') {
+        value = nativeObjectToString.call(value);
+      }
+
       result[value] = key;
     }, constant(identity));
 
@@ -14999,6 +14858,11 @@ logDepthDeclaration:"#ifdef LOGARITHMICDEPTH\nuniform float logarithmicDepthCons
      * // => { 'group1': ['a', 'c'], 'group2': ['b'] }
      */
     var invertBy = createInverter(function(result, value, key) {
+      if (value != null &&
+          typeof value.toString != 'function') {
+        value = nativeObjectToString.call(value);
+      }
+
       if (hasOwnProperty.call(result, value)) {
         result[value].push(key);
       } else {

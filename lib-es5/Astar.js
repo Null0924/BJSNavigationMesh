@@ -111,6 +111,14 @@ var Astar = Class.$extend({
 	heuristic: function heuristic(pos1, pos2) {
 		return BABYLON.Vector3.DistanceSquared(pos1, pos2);
 	},
+	manhattanDistance: function manhattanDistance(pos1, pos2) {
+		return Math.abs(pos2.x - pos1.x) + Math.abs(pos2.z - pos1.z);
+	},
+	euclideanDistance: function euclideanDistance(pos1, pos2) {
+		var dx = abs(pos1.x - pos2.x);
+		dy = abs(pos1.z - pos2.z);
+		return Math.sqrt(dx * dx + dy * dy);
+	},
 	neighbours: function neighbours(graph, node) {
 		var ret = [];
 
